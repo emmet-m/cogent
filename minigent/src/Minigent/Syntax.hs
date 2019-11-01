@@ -95,7 +95,17 @@ data Row
 data RecPar
   = None | Rec VarName
   | UnknownParameter VarName -- ^ Used only in type inference
-  deriving (Show, Eq)
+  deriving (Show)
+
+-- | As we want recursive parameters to be non-nominal, any two recursive parameters are
+--   equal regardless of name, only if their kind is equal.
+--   We cannot say the same for unknowns unless they have the same unification variable,
+--   as one might resolve to `None', and the other to `Rec _'.
+instance Eq RecPar where
+  None == None = True 
+  Rec _ == Rec _ = True
+  UnknownParameter p == UnknownParameter p' = p == p'
+  _ == _ = False
 
 -- | A type, which may contain unification variables or type operators.
 data Type
@@ -105,14 +115,34 @@ data Type
   | Variant Row
   | TypeVar VarName -- ^ Refers to a rigid type variable bound with a forall.
   | TypeVarBang VarName -- ^ A 'TypeVar' with 'Bang' applied.
-  -- ^ Refers to a recursive parameter, with the context of it's recursive references for Unrolling
-  | RecPar VarName (M.Map VarName Type)  
-  | RecParBang VarName (M.Map VarName Type) -- ^ A 'RecPar' with 'Bang' applied.
+  -- ^ Refers to a recursive parameter, with the context of it's recursive references for Unrolling,
+  --   and it's De Bruijn index
+  | RecPar     VarName Int (M.Map Int Type) (M.Map VarName Int)
+  | RecParBang VarName Int (M.Map Int Type) (M.Map VarName Int) -- ^ A 'RecPar' with 'Bang' applied.
   | Function Type Type
   -- used in type inference:
   | UnifVar VarName -- ^ Stands for an unknown type
   | Bang Type -- ^ Eliminated by type normalisation.
-  deriving (Show, Eq)
+  deriving (Show)
+
+-- We have to provide a manual Eq instace for Type as RecPar's shouldn't be nominally compared
+instance Eq Type where
+  -- The interesting case
+  RecPar _ i _ _ == RecPar _ i' _ _ = i == i'
+  RecParBang _ i _ _ == RecParBang _ i' _ _ = i == i'
+
+  -- The rest as normal
+  PrimType p == PrimType p' = p == p'
+  Record p r s == Record p' r' s' = p == p' && r == r' && s == s'
+  AbsType n s ts == AbsType n' s' ts' = n == n' && s == s' && ts == ts'
+  Variant r == Variant r' = r == r'
+  TypeVar v == TypeVar v' = v == v'
+  TypeVarBang v == TypeVarBang v' = v == v'
+  Function a b == Function a' b' = a == a' && b == b'
+  UnifVar v == UnifVar v' = v == v'
+  Bang t == Bang t' = t == t'
+  
+  _ == _ = False
 
 -- | Used for literals.
 data PrimValue = BoolV Bool | IntV Integer | UnitV

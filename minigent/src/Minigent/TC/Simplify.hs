@@ -40,8 +40,8 @@ simplify axs = Rewrite.pickOne $ \c -> -- trace ("About to simpliy:\n" ++ debugP
   Escape (Function _ _)               -> Just []
   Drop   (TypeVarBang _)              -> Just []
   Share  (TypeVarBang _)              -> Just []
-  Drop   (RecParBang _ _)             -> Just []
-  Share  (RecParBang _ _)             -> Just []
+  Drop   (RecParBang _ _ _ _)             -> Just []
+  Share  (RecParBang _ _ _ _)             -> Just []
   -- TODO: Drop/Share RecParBang?
   Share  (Variant es)                 -> guard (rowVar es == Nothing)
                                       >> Just (map Share  (Row.untakenTypes es))
@@ -107,31 +107,33 @@ simplify axs = Rewrite.pickOne $ \c -> -- trace ("About to simpliy:\n" ++ debugP
    - If we are reasoning about two recursive parameters, check if their context references
    - are equal
    -}
-  RecPar n ctxt :< RecPar n' ctxt'  -> guard (ctxt M.! n == ctxt M.! n') >> Just []
-  RecPar n ctxt :=: RecPar n' ctxt' -> guard (ctxt M.! n == ctxt M.! n') >> Just []
-  RecParBang n ctxt :< RecParBang n' ctxt'  -> guard (ctxt M.! n == ctxt M.! n') >> Just []
-  RecParBang n ctxt :=: RecParBang n' ctxt' -> guard (ctxt M.! n == ctxt M.! n') >> Just []
+  r@(RecPar n i im nm)     :<  r'@(RecPar n' i' im' nm')     ->
+    trace ("Comparing these two:\n" ++ debugPrettyType (unroll r) ++ "\n" ++ debugPrettyType (unroll r')) 
+    guard (unroll r == unroll r') >> Just []
+  RecPar n i im nm     :=: RecPar n' i' im' nm'     -> guard (im M.! i == im' M.! i') >> Just []
+  RecParBang n i im nm :<  RecParBang n' i' im' nm' -> guard (im M.! i == im' M.! i') >> Just []
+  RecParBang n i im nm :=: RecParBang n' i' im' nm' -> guard (im M.! i == im' M.! i') >> Just []
 
   -- We need this here as otherwise it triggers the cases below
-  RecParBang n ctxt :< RecPar n' ctxt'  ->  Nothing 
-  RecPar n ctxt :< RecParBang n' ctxt'  ->  Nothing 
-  RecParBang n ctxt :=: RecPar n' ctxt' ->  Nothing 
-  RecPar n ctxt :=: RecParBang n' ctxt' ->  Nothing 
+  RecParBang _ _ _ _ :< RecPar _ _ _ _  ->  Nothing 
+  RecPar _ _ _ _ :< RecParBang _ _ _ _  ->  Nothing 
+  RecParBang _ _ _ _ :=: RecPar _ _ _ _ ->  Nothing 
+  RecPar _ _ _ _ :=: RecParBang _ _ _ _ ->  Nothing 
 
   {-
    - otherwise:
    - If we are reasoning about a recursive parameter and a type, unroll the parameter
    - and reason about the type and the unrolled parameter
    -}
-  RecPar n ctxt :< t  -> Just [ unroll (RecPar n ctxt) :< t]
-  t :< RecPar n ctxt  -> Just [t :< unroll (RecPar n ctxt)]
-  RecPar n ctxt :=: t -> Just [unroll (RecPar n ctxt) :=: t]
-  t :=: RecPar n ctxt -> Just [t :=: unroll (RecPar n ctxt)]
+  r@(RecPar n i im nm) :< t  -> Just [unroll r :< t]
+  t :< r@(RecPar n i im nm)  -> Just [t :< unroll r]
+  r@(RecPar n i im nm) :=: t -> Just [unroll r :=: t]
+  t :=: r@(RecPar n i im nm) -> Just [t :=: unroll r]
 
-  RecParBang n ctxt :< t  -> Just [Bang (unroll (RecPar n ctxt)) :< t]
-  t :< RecParBang n ctxt  -> Just [t :< Bang (unroll (RecPar n ctxt))]
-  RecParBang n ctxt :=: t -> Just [Bang (unroll (RecPar n ctxt)) :=: t]
-  t :=: RecParBang n ctxt -> Just [t :=: Bang (unroll (RecPar n ctxt))]
+  r@(RecParBang n i im nm) :< t  -> Just [Bang (unroll r) :< t]
+  t :< r@(RecParBang n i im nm)  -> Just [t :< Bang (unroll r)]
+  r@(RecParBang n i im nm) :=: t -> Just [Bang (unroll r) :=: t]
+  t :=: r@(RecParBang n i im nm) -> Just [t :=: Bang (unroll r)]
 
   t :< t'  -> guard (unorderedType t || unorderedType t') >> Just [t :=: t']
 

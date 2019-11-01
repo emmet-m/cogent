@@ -273,28 +273,44 @@ normaliseType func ty =
 
 -- | Unrolls a recursive parameter to the record it references
 unroll :: Type -> Type
-unroll (RecPar n ctxt) = mapRecPars ctxt (ctxt M.! n)
+unroll (RecPar n i im nm) = mapRecPars nm im (im M.! i)
 -- TODO: Should this be an error?
 unroll t = trace "Warning: Unroll called on type that is not a recursive parameter" t
 
 -- | Given a PolyType definition, changes all recursive parameter references from TypeVar to RecPar 
 mapRecParsPT :: PolyType -> PolyType
-mapRecParsPT (Forall vs cs t) = Forall vs cs $ mapRecPars M.empty t
+mapRecParsPT (Forall vs cs t) = Forall vs cs $ mapRecPars M.empty M.empty t
 
--- | Given a context, changes all recursive parameter references from TypeVar to RecPar according to the context
-mapRecPars :: M.Map VarName Type -> Type -> Type
-mapRecPars rp (AbsType n s ts)   = AbsType n s $ map (mapRecPars rp) ts
-mapRecPars rp (Variant row)      = Variant $ Row.mapEntries (\(Entry n t tk) -> Entry n (mapRecPars rp t) tk) row
-mapRecPars rp (Bang t)           = Bang $ mapRecPars rp t
-mapRecPars rp tv@(TypeVar v)     = if M.member v rp then (RecPar     v rp) else tv
-mapRecPars rp tv@(TypeVarBang v) = if M.member v rp then (RecParBang v rp) else tv
-mapRecPars rp r@(Record par row s) = 
-  Record par (Row.mapEntries (\(Entry n t tk) -> Entry n (mapRecPars (addRecPar par) t) tk) row) s
-  where addRecPar p = case p of
-                        Rec v -> (M.insert v r rp)
-                        _ -> rp
-mapRecPars rp (Function a b) = Function (mapRecPars rp a) (mapRecPars rp b)
-mapRecPars _ t = t
+-- Converts recursive parameters to deBruin indices.
+mapRecPars :: M.Map VarName Int -> M.Map Int Type -> Type -> Type
+mapRecPars nm im (AbsType n' s ts)  = AbsType n' s $ map (mapRecPars nm im) ts
+mapRecPars nm im (Variant row)      = Variant $ Row.mapEntries (\(Entry n t tk) -> Entry n (mapRecPars nm im t) tk) row
+mapRecPars nm im (Bang t)           = Bang $ mapRecPars nm im t
+
+mapRecPars nm im tv@(TypeVar v)     = 
+  if M.member v nm then 
+    let ind = nm M.! v in
+    (RecPar v ind im nm)
+  else tv
+mapRecPars nm im tv@(TypeVarBang v) = 
+  if M.member v nm then 
+    let ind = nm M.! v in
+    (RecPar v ind im nm)
+  else tv
+
+mapRecPars nm im r@(Record par row s) = 
+  let nm' = case par of (Rec v) -> M.insert v 0 nm
+                        _ -> nm
+      im' = case par of (Rec v) -> M.insert 0 r (M.mapKeys (+1) im)
+                        _ -> im
+  in
+    Record par (Row.mapEntries 
+      (
+        \(Entry n t tk) -> Entry n (mapRecPars nm' im' t) tk) row
+      )
+      s
+mapRecPars nm im (Function a b) = Function (mapRecPars nm im a) (mapRecPars nm im b)
+mapRecPars _ _ t = t
 
 
 -- | A rewrite that substitutes a given unification type variable for a type term in a type.

@@ -29,8 +29,8 @@ normaliseRW = rewrite $ \t -> --trace ("Norm about to look at type:\n" ++ debugP
     Bang (AbsType n s ts)  -> Just (AbsType n (bangSigil s) (map Bang ts))
     Bang (TypeVar a)       -> Just (TypeVarBang a)
     Bang (TypeVarBang a)   -> Just (TypeVarBang a)
-    Bang (RecPar a ctxt)        -> Just (RecParBang a ctxt)
-    Bang (RecParBang a ctxt)    -> Just (RecParBang a ctxt)
+    Bang (RecPar n i im nm)        -> Just (RecParBang n i im nm)
+    Bang (RecParBang n i im nm)    -> Just (RecParBang n i im nm)
     Bang (PrimType t)      -> Just (PrimType t)
     Bang (Variant r)  | rowVar r == Nothing
       -> Just (Variant (Row.mapEntries (entryTypes Bang) r))
